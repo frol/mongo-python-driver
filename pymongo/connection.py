@@ -167,6 +167,7 @@ class Connection(object):  # TODO support auth for pooling
 
         self.__host = None
         self.__port = None
+        self.connected = False
 
         self.__nodes = [(host, port)]
         self.__slave_okay = slave_okay
@@ -468,8 +469,10 @@ class Connection(object):  # TODO support auth for pooling
             sock.settimeout(_CONNECT_TIMEOUT)
             sock.connect((self.__host, self.__port))
             sock.settimeout(self.__network_timeout)
+            self.connected = True
             return sock
         except socket.error:
+            self.connected = False
             raise AutoReconnect("could not connect to %r" % self.__nodes)
 
     def disconnect(self):
@@ -485,6 +488,7 @@ class Connection(object):  # TODO support auth for pooling
         .. seealso:: :meth:`end_request`
         .. versionadded:: 1.3
         """
+        self.connected = False
         self.__pool = Pool(self.__connect)
 
     def _reset(self):

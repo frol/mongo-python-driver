@@ -65,6 +65,9 @@ class Database(object):
 
         self.__name = unicode(name)
         self.__connection = connection
+        self.__authenticating = False
+        self.__username = None
+        self.__password = None
 
         self.__incoming_manipulators = []
         self.__incoming_copying_manipulators = []
@@ -111,9 +114,14 @@ class Database(object):
         """The :class:`~pymongo.connection.Connection` instance for this
         :class:`Database`.
 
+        .. versionchanged:: 1.6+
+           when requested connetion use auto authentication
+
         .. versionchanged:: 1.3
            ``connection`` is now a property rather than a method.
         """
+        if self.__connection.connected:
+            self.authenticate()
         return self.__connection
 
     @property
@@ -459,7 +467,7 @@ class Database(object):
         """
         self.system.users.remove({"user": name}, safe=True)
 
-    def authenticate(self, name, password):
+    def authenticate(self, name=None, password=None):
         """Authenticate to use this database.
 
         Once authenticated, the user has full read and write access to
@@ -484,10 +492,6 @@ class Database(object):
              :meth:`~pymongo.connection.Connection.disconnect` or
              :meth:`~pymongo.connection.Connection.end_request`.
 
-           - When sharing a :class:`~pymongo.connection.Connection`
-             between multiple threads, each thread will need to
-             authenticate separately.
-
         .. warning:: Currently, calls to
            :meth:`~pymongo.connection.Connection.end_request` will
            lead to unpredictable behavior in combination with
@@ -502,6 +506,24 @@ class Database(object):
 
         .. mongodoc:: authenticate
         """
+        # lock for prevent the recursion
+        if self.__authenticating:
+            return
+        self.__authenticating = True
+        
+        # if name is None then use previous saved username and password
+        # else save current name and password
+        if name is None and self.__username is None:
+            # authentication not need
+            self.__authenticating = False
+            return
+        elif name is None:
+            name = self.__username
+            password = self.__password
+        else:
+            self.__username = name
+            self.__password = password
+        
         if not isinstance(name, basestring):
             raise TypeError("name must be an instance of basestring")
         if not isinstance(password, basestring):
@@ -512,8 +534,10 @@ class Database(object):
         try:
             self.command("authenticate", user=unicode(name),
                          nonce=nonce, key=key)
+            self.__authenticating = False
             return True
         except OperationFailure:
+            self.__authenticating = False
             return False
 
     def logout(self):
